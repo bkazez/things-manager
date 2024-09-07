@@ -5,7 +5,7 @@ To run:
 python manage.py
 ```
 
-Use --dry-run to test.
+Use `--dry-run` to test.
 
 It runs an AppleScript that outputs Things tasks as text, turns that into a hash, and then generates AppleScript code needed to re-prioritize tasks.
 
