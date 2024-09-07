@@ -1,4 +1,4 @@
-Python script to auto-prioritize Things3 tasks.
+Python script to manage Things3 "Today" list.
 
 To run:
 ```
