@@ -9,6 +9,7 @@ DRY_RUN = False
 PRINT_ONLY = False
 
 MAX_TODAY_TODOS = 5
+KIT_INTERVAL_DAYS = 4
 KIT_TAG = "KIT"
 
 # Things3 list IDs
@@ -110,6 +111,13 @@ def prioritize_today(todos, max_today_todos):
 
     return scpt
 
+def most_recent_kit(todos):
+    # Find the first KIT item in the sorted logbook
+    logbook_todos = todos_from_list(todos, THINGS_LOGBOOK_LIST)
+    logbook_todos.sort(key=lambda x: x['completionDate'], reverse=True)
+    for todo in logbook_todos:
+        if is_kit(todo):
+            return todo
 
 def indent(text, indent_str="\t"):
     lines = text.split('\n')
@@ -152,7 +160,13 @@ def main():
         scpt = ""
 
         scpt += prioritize_today(todos, MAX_TODAY_TODOS-1) + "\n"
-        scpt += ensure_kit_in_today(todos) + "\n"
+
+        most_recent_kit_todo = most_recent_kit(todos)
+        print(f"Most recent KIT: {most_recent_kit_todo['name']}")
+        if most_recent_kit_todo is not None and most_recent_kit_todo['completionDate'] is not None:
+            print(f"   {(datetime.now() - most_recent_kit_todo['completionDate']).days} days ago")
+            if (datetime.now() - most_recent_kit_todo['completionDate']).days > KIT_INTERVAL_DAYS:
+                    scpt += ensure_kit_in_today(todos) + "\n"
 
         # Import helpers
         with open(HELPERS_APPLESCRIPT) as f: helpers = f.read()
@@ -167,9 +181,11 @@ def main():
         print("No output from things2text")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process dry-run argument")
+    parser = argparse.ArgumentParser(description="Process command-line arguments")
     parser.add_argument('--dry-run', action='store_true', help="Run in dry-run mode")
     parser.add_argument('--print-only', action='store_true', help="Print the todos, and nothing more")
+    parser.add_argument('--max-today-todos', type=int, default=None, help="Set the maximum number of todos for today")
+    parser.add_argument('--kit-interval', type=int, default=None, help="Process only if the most recent KIT todo is older than specified days")
 
     args = parser.parse_args()
     DRY_RUN = args.dry_run
