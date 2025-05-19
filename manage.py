@@ -1,16 +1,20 @@
 import re
+import os
+import sys
 import json
 import argparse
 import subprocess
 from datetime import datetime
 from dataclasses import dataclass
 
+# launchd runs with / as the current dir
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+
 DRY_RUN = False
 PRINT_ONLY = False
 
-MAX_TODAY_TODOS = 5
-KIT_INTERVAL_DAYS = 4
-KIT_TAG = "KIT"
+MAX_TODAY_TODOS = 3
 
 # Things3 list IDs
 THINGS_TODAY_LIST = "TMTodayListSource"
@@ -23,10 +27,18 @@ DELIM = '|___|'
 
 def run_things2text():
     try:
-        result = subprocess.run(['osascript', 'things2text.scpt'], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ['/usr/bin/osascript', 'things2text.scpt'],
+            capture_output=True, text=True, check=True
+        )
+        # Return only `stderr` if needed
         return result.stderr.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error running things2text: {e}")
+        # Send command stderr to sys.stderr
+        if e.stderr:
+            print(e.stderr.strip(), file=sys.stderr)
+        # Print error details to stderr
+        print(f"Error running things2text: {e}", file=sys.stderr)
         return None
 
 def parse_things_output(output):
@@ -56,25 +68,6 @@ def parse_things_output(output):
 def todos_from_list(todos, list_id):
     return [todo for todo in todos if todo.get('listID') == list_id]
 
-def is_kit(todo):
-    #print("tags: " + ', '.join(todo['tags']))
-    return KIT_TAG in todo['tags']
-
-def ensure_kit_in_today(todos):
-    scpt = ""
-
-    # This depends on the prioritization step moving everything away, first.
-    # Then, in addition to that, we add one remaining KIT.
-
-    # Search remaining todos
-    print("Search remaining todos")
-    for todo in todos:
-        if is_kit(todo):
-            scpt += f"move my todoWithID(\"{todo['id']}\") to list \"Today\" -- {todo['name']}\n"
-            break
-
-    return scpt
-
 def get_priority(todo):
     priorities = [int(match.group(1)) for tag in todo['tags']
                   for match in [re.search(r'P(\d)', tag)] if match]
@@ -100,7 +93,7 @@ def prioritize_today(todos, max_today_todos):
     todos_by_priority = sort_by_priority(todos)
 
     print("\n\n\nNot in upcoming, sorted by prio:")
-    #print_todos(todos_by_priority)
+    print_todos(todos_by_priority)
 
     # Select max_today_todos to move into Today.
     todos_to_move = todos_by_priority[0:max_today_todos]
@@ -110,14 +103,6 @@ def prioritize_today(todos, max_today_todos):
         scpt += f"move my todoWithID(\"{todo['id']}\") to list \"Today\" -- {todo['name']}\n"
 
     return scpt
-
-def most_recent_kit(todos):
-    # Find the first KIT item in the sorted logbook
-    logbook_todos = todos_from_list(todos, THINGS_LOGBOOK_LIST)
-    logbook_todos.sort(key=lambda x: x['completionDate'], reverse=True)
-    for todo in logbook_todos:
-        if is_kit(todo):
-            return todo
 
 def indent(text, indent_str="\t"):
     lines = text.split('\n')
@@ -129,7 +114,7 @@ def indent(text, indent_str="\t"):
 def run_applescript(script):
     try:
         # Run the AppleScript using osascript
-        process = subprocess.Popen(['osascript', '-e', script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen(['/usr/bin/osascript', '-e', script], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
         return_code = process.returncode
 
@@ -159,14 +144,7 @@ def main():
 
         scpt = ""
 
-        scpt += prioritize_today(todos, MAX_TODAY_TODOS-1) + "\n"
-
-        most_recent_kit_todo = most_recent_kit(todos)
-        print(f"Most recent KIT: {most_recent_kit_todo['name']}")
-        if most_recent_kit_todo is not None and most_recent_kit_todo['completionDate'] is not None:
-            print(f"   {(datetime.now() - most_recent_kit_todo['completionDate']).days} days ago")
-            if (datetime.now() - most_recent_kit_todo['completionDate']).days > KIT_INTERVAL_DAYS:
-                    scpt += ensure_kit_in_today(todos) + "\n"
+        scpt += prioritize_today(todos, MAX_TODAY_TODOS) + "\n"
 
         # Import helpers
         with open(HELPERS_APPLESCRIPT) as f: helpers = f.read()
@@ -185,7 +163,6 @@ if __name__ == "__main__":
     parser.add_argument('--dry-run', action='store_true', help="Run in dry-run mode")
     parser.add_argument('--print-only', action='store_true', help="Print the todos, and nothing more")
     parser.add_argument('--max-today-todos', type=int, default=None, help="Set the maximum number of todos for today")
-    parser.add_argument('--kit-interval', type=int, default=None, help="Process only if the most recent KIT todo is older than specified days")
 
     args = parser.parse_args()
     DRY_RUN = args.dry_run
